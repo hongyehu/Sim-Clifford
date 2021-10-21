@@ -1,9 +1,14 @@
+from typing import List, Union
+
 import numpy
+from numba import njit
+
 from .utils import (
-    acq_mat, ps0, z2inv, pauli_combine, pauli_transform, binary_repr,
+    acq, acq_mat, ps0, z2inv, pauli_combine, pauli_transform, binary_repr,
     random_pauli, random_clifford, map_to_state, state_to_map, clifford_rotate,
     stabilizer_project, stabilizer_measure, stabilizer_expect, stabilizer_entropy)
 from .paulialg import PauliList, pauli, paulis
+
 
 class CliffordMap(PauliList):
     '''Represents a Clifford map. This is a subclass of PauliList.
@@ -65,6 +70,7 @@ class CliffordMap(PauliList):
         gs_iden, ps_mis = pauli_combine(gs_inv, self.gs, self.ps)
         ps_inv = (- ps_mis - ps0(gs_inv))%4
         return CliffordMap(gs_inv, ps_inv)
+
 
 class StabilizerState(PauliList):
     '''Represents a stabilizer state. This is a subclass of PauliList.
@@ -163,17 +169,20 @@ class StabilizerState(PauliList):
         gs, ps = pauli_combine(C, self.gs[self.r:self.N], self.ps[self.r:self.N])
         return PauliList(gs, ps)
 
+
 # ---- map constructors ----
 def identity_map(N):
     '''construct identity Clifford map of N qubits.'''
     gs = numpy.eye(2*N, dtype=numpy.int_)
     return CliffordMap(gs)
 
+
 def random_pauli_map(N):
     '''construct random Pauli map of N qubits.'''
     gs = random_pauli(N) # shape (2*N, 2*N), mapping matrix
     ps = 2 * numpy.random.randint(0,2,2*N) # shape (2*N), phase indicator
     return CliffordMap(gs, ps)
+
 
 def random_clifford_map(N):
     '''construct random Clifford map of N qubits.
@@ -182,6 +191,7 @@ def random_clifford_map(N):
     ps = 2 * numpy.random.randint(0,2,2*N) # shape (2*N), phase indicator
     return CliffordMap(gs, ps)
 
+
 def clifford_rotation_map(gen):
     '''construct Clifford map from generator.'''
     gen = pauli(gen)
@@ -189,6 +199,7 @@ def clifford_rotation_map(gen):
     ps = numpy.zeros(2*gen.N, dtype=numpy.int_) # initialize
     gs, ps = clifford_rotate(gen.g, gen.p, gs, ps)
     return CliffordMap(gs, ps)
+
 
 # ---- state constructors ----
 def stabilizer_state(*stabilizers):
@@ -205,23 +216,87 @@ def stabilizer_state(*stabilizers):
     state.ps[state.r:state.N] = numpy.flip(stabilizers.ps)
     return state
 
+
 def maximally_mixed_state(N):
     return identity_map(N).to_state(r=N)
+
 
 def zero_state(N):
     return identity_map(N).to_state()
 
+
 def one_state(N):
     return -zero_state(N)
+
 
 def ghz_state(N):
     objs = [pauli({i:3,i+1:3},N) for i in range(N-1)]
     objs.append(pauli([1]*N))
     return stabilizer_state(paulis(objs))
 
+
 def random_pauli_state(N, r=None):
     return random_pauli_map(N).to_state(r)
+
 
 def random_clifford_state(N, r=None):
     return random_clifford_map(N).to_state(r)
 
+
+@njit
+def pauli_operation(gs_stb, ps_stb, gs_obs, r):
+    """Apply a Pauli gate(gs_obs) to stabilizer state.
+
+    Parameters:
+    gs_stb: int (2*N, 2*N) - Pauli strings in original stabilizer tableau.
+    ps_stb: int (N) - phase indicators of (de)stabilizers.
+    gs_obs: int (L, 2*N) - strings of Pauli gates to apply from 0 to L-1.
+    r: int - log2 rank of density matrix (num of standby stablizers).
+
+    Returns:
+    gs_stb: int (2*N, 2*N) - Pauli strings in updated stabilizer tableau.
+    ps_stb: int (N) - phase indicators of (de)stabilizers.
+    r: int - updated log2 rank of density matrix.
+    """
+    (L, Ng) = gs_obs.shape
+    N = Ng // 2
+    assert 0 <= r <= N
+    for k in range(L):  # for each observable gs_obs[k]
+        for j in range(2 * N):
+            if acq(gs_stb[j], gs_obs[k]):  # find gs_stb[j] anticommute with gs_obs[k]
+                if (
+                    r <= j < N
+                ):  # gs_stb[j] anti-commute with gs_obs[k] gate, flip the sign
+                    ps_stb[j] = (ps_stb[j] + 2) % 4
+
+    return gs_stb, ps_stb, r
+
+
+def stoc_depolarize_map(stab_state, pvalues: Union[float, List[float]]):
+    if not isinstance(pvalues, list):
+        pvalues = [pvalues]
+    if len(pvalues) == 1:
+        px = py = pz = pvalues[0] / 3
+    elif len(pvalues) == 3:
+        px, py, pz = pvalues
+    else:
+        raise ValueError(
+            f"Arg `pvalues` should have 1 element (for depolarizing noise: p) or "
+            f"3 elements (for asymmetric depolarizing noise: px, py, pz), but "
+            f"`len(pvalues)` was {len(pvalues)}."
+        )
+
+    gs_stb = stab_state.gs
+    ps_stb = stab_state.ps
+    N = (gs_stb.shape[1]) // 2
+    r = stab_state.r
+    # sample uncorrelated X,Y,Z gate
+    tmp = {0: [0, 0], 1: [1, 0], 2: [1, 1], 3: [0, 1]}
+    elements = [0, 1, 2, 3]
+    probabilities = [1 - (px + py + pz), px, py, pz]
+    sam = numpy.random.choice(elements, N, p=probabilities)
+    gs_obs = (numpy.array([tmp[i] for i in sam]).flatten()).reshape((1, -1))
+    new_gs, new_ps, new_r = pauli_operation(gs_stb, ps_stb, gs_obs, r)
+    new_state = StabilizerState(new_gs, new_ps)
+    new_state.set_r(new_r)
+    return new_state
