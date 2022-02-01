@@ -328,7 +328,7 @@ class PauliPolynomial(PauliList):
 
     def reduce(self, tol=1.e-10):
         '''Reduce the Pauli polynomial by 
-            1. combine simiilar terms,
+            1. combine similar terms,
             2. move phase factors to coefficients,
             3. drop terms that are too small (coefficient < tol).'''
         gs, inds = numpy.unique(self.gs, return_inverse=True, axis=0)
