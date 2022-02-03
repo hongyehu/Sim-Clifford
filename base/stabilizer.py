@@ -2,7 +2,7 @@ import numpy
 from .utils import (
     acq_mat, ps0, z2inv, pauli_combine, pauli_transform, binary_repr,
     random_pauli, random_clifford, map_to_state, state_to_map, clifford_rotate,
-    stabilizer_project, stabilizer_measure, stabilizer_expect, stabilizer_entropy)
+    stabilizer_project, stabilizer_measure, stabilizer_expect, stabilizer_entropy, pauli_operation)
 from .paulialg import PauliList, pauli, paulis
 
 class CliffordMap(PauliList):
@@ -181,6 +181,8 @@ def random_clifford_map(N):
     gs = random_clifford(N) # shape (2*N, 2*N), mapping matrix
     ps = 2 * numpy.random.randint(0,2,2*N) # shape (2*N), phase indicator
     return CliffordMap(gs, ps)
+
+
 
 def clifford_rotation_map(gen):
     '''construct Clifford map from generator.'''
