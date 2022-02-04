@@ -2,7 +2,7 @@ import numpy
 from .utils import (
     ipow, pauli_tokenize, 
     clifford_rotate, pauli_transform,
-    batch_dot, aggregate)
+    batch_dot, aggregate, pauli2pauli)
 
 class Pauli(object):
     '''Represents a Pauli operator.
@@ -96,6 +96,8 @@ class Pauli(object):
     def as_polynomial(self):
         '''cast a Pauli operator to a Pauli polynomial'''
         return self.as_monomial().as_polynomial()
+    def convert(self):
+        return pauli2pauli(self.g, self.p)
 
 class PauliList(object):
     '''Represents a list of Pauli operators.

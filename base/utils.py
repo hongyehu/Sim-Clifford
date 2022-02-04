@@ -908,4 +908,25 @@ def aggregate(data_in, inds, l):
     for i in range(data_in.shape[0]):
         data_out[inds[i]] += data_in[i]
     return data_out
+#################### Modified by Feb. 3rd ####################
 
+import qutip as qt
+
+def pauli2pauli(g,p):
+    '''
+    g: int (2*N) - an array of pauli string
+    p: int - phase indicator
+    '''
+    tmp = [qt.qeye(2), qt.sigmax(), qt.sigmay(), qt.sigmaz()]
+    N = numpy.shape(g)[0]//2
+    tmp_list=[]
+    for i in range(N):
+        if (g[2*i]==1)&(g[2*i+1]==1):
+            tmp_list.append(tmp[2])
+        elif (g[2*i]==1)&(g[2*i+1]==0):
+            tmp_list.append(tmp[1])
+        elif (g[2*i]==0)&(g[2*i+1]==1):
+            tmp_list.append(tmp[3])
+        else:
+            tmp_list.append(tmp[0])
+    return (1j)**(p)*qt.tensor(tmp_list)
